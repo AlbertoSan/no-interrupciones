@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Página Wrapper Avanzado</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .iframe-container {
+            width: 100%;
+            height: 800px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        input[type="url"] {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        button {
+            padding: 8px 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #ff4444;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .sidebar {
+            position: fixed;
+            right: -300px;
+            top: 0;
+            width: 300px;
+            height: 100%;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: right 0.3s ease;
+            z-index: 1000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .sidebar.open {
+            right: 0;
+        }
+
+        .history-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .history-item:hover {
+            background: #f5f5f5;
+        }
+
+        .history-url {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-right: 10px;
+        }
+
+        .close-sidebar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .navigation-group {
+            display: flex;
+            gap: 5px;
+        }
+
+        .tools-group {
+            display: flex;
+            gap: 5px;
+        }
+
+        .separator {
+            width: 1px;
+            background: #ddd;
+            margin: 0 10px;
+        }
+
+        #zoomLevel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 5px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <div class="navigation-group">
+                <button onclick="goBack()" id="backBtn" title="Atrás">←</button>
+                <button onclick="goForward()" id="forwardBtn" title="Adelante">→</button>
+                <button onclick="refreshPage()" title="Recargar">↻</button>
+            </div>
+            <input type="url" id="urlInput" placeholder="Introduce la URL de la página" value="https://example.com">
+            <button onclick="loadUrl()">Ir</button>
+            <div class="separator"></div>
+            <div class="tools-group">
+                <button onclick="toggleHistory()" title="Historial">📋</button>
+                <button onclick="toggleReadMode()" title="Modo lectura">📖</button>
+                <button onclick="captureScreenshot()" title="Captura">📸</button>
+            </div>
+        </div>
+        <div class="iframe-container">
+            <iframe id="pageFrame" src="about:blank" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+        </div>
+    </div>
+    <div id="status">Popup bloqueado</div>
+    <div id="zoomLevel">Zoom: 100%</div>
+    
+    <div class="sidebar" id="sidebar">
+        <div class="close-sidebar" onclick="toggleHistory()">×</div>
+        <h3>Historial de navegación</h3>
+        <div id="historyList"></div>
+    </div>
+
+    <div class="zoom-controls">
+        <button onclick="adjustZoom(0.1)" title="Aumentar zoom">+</button>
+        <button onclick="adjustZoom(-0.1)" title="Reducir zoom">-</button>
+        <button onclick="resetZoom()" title="Restablecer zoom">100%</button>
+    </div>
+
+    <script>
+        let history = [];
+        let currentIndex = -1;
+        let readModeEnabled = false;
+        let currentZoom = 1;
+
+        // Bloquear window.open
+        window.open = function() { 
+            showStatus();
+            return null; 
+        };
+
+        // Bloquear creación de nuevas ventanas
+        Object.defineProperty(window, 'open', {
+            value: function() {
+                showStatus();
+                return null;
+            },
+            writable: false,
+            configurable: false
+        });
+
+        function showStatus() {
+            const status = document.getElementById('status');
+            status.style.display = 'block';
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 2000);
+        }
+
+        function loadUrl(url) {
+            const targetUrl = url || document.getElementById('urlInput').value;
+            if (targetUrl) {
+                const iframe = document.getElementById('pageFrame');
+                
+                // Crear nuevo iframe
+                const newIframe = document.createElement('iframe');
+                newIframe.id = 'pageFrame';
+                newIframe.sandbox = 'allow-same-origin allow-scripts allow-forms';
+                
+                newIframe.onload = function() {
+                    try {
+                        const iframeWindow = newIframe.contentWindow;
+                        const iframeDoc = newIframe.contentDocument || iframeWindow.document;
+
+                        // Bloquear window.open en el iframe
+                        iframeWindow.open = function() { 
+                            showStatus();
+                            return null; 
+                        };
+
+                        // Interceptar clicks
+                        iframeDoc.addEventListener('click', function(e) {
+                            const target = e.target.closest('a');
+                            if (target) {
+                                e.preventDefault();
+                                if (target.href && target.href !== 'javascript:void(0)') {
+                                    navigateTo(target.href);
+                                }
+                            }
+                        }, true);
+
+                        // Forzar enlaces internos
+                        const links = iframeDoc.getElementsByTagName('a');
+                        Array.from(links).forEach(link => {
+                            link.target = '_self';
+                            link.rel = 'noopener noreferrer';
+                        });
+
+                        // Aplicar zoom
+                        if (readModeEnabled) {
+                            applyReadMode(iframeDoc);
+                        }
+                        applyZoom();
+
+                    } catch (error) {
+                        console.log('Error al acceder al iframe:', error);
+                    }
+                };
+
+                // Reemplazar iframe
+                iframe.parentNode.replaceChild(newIframe, iframe);
+                newIframe.src = targetUrl;
+
+                // Actualizar historial
+                if (!url) {
+                    navigateTo(targetUrl);
+                }
+            }
+        }
+
+        function navigateTo(url) {
+            document.getElementById('urlInput').value = url;
+            if (currentIndex < history.length - 1) {
+                history = history.slice(0, currentIndex + 1);
+            }
+            history.push(url);
+            currentIndex = history.length - 1;
+            loadUrl(url);
+            updateNavigationButtons();
+            updateHistory();
+        }
+
+        function goBack() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                loadUrl(history[currentIndex]);
+                document.getElementById('urlInput').value = history[currentIndex];
+                updateNavigationButtons();
+            }
+        }
+
+        function goForward() {
+            if (currentIndex < history.length - 1) {
+                currentIndex++;
+                loadUrl(history[currentIndex]);
+                document.getElementById('urlInput').value = history[currentIndex];
+                updateNavigationButtons();
+            }
+        }
+
+        function updateNavigationButtons() {
+            document.getElementById('backBtn').disabled = currentIndex <= 0;
+            document.getElementById('forwardBtn').disabled = currentIndex >= history.length - 1;
+        }
+
+        function refreshPage() {
+            loadUrl(document.getElementById('urlInput').value);
+        }
+
+        function toggleHistory() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('open');
+            updateHistory();
+        }
+
+        function updateHistory() {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            history.forEach((url, index) => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                item.innerHTML = `
+                    <div class="history-url">${url}</div>
+                    <button onclick="navigateToHistory(${index})" ${index === currentIndex ? 'disabled' : ''}>Ir</button>
+                `;
+                historyList.appendChild(item);
+            });
+        }
+
+        function navigateToHistory(index) {
+            currentIndex = index;
+            loadUrl(history[index]);
+            document.getElementById('urlInput').value = history[index];
+            updateNavigationButtons();
+        }
+
+        function toggleReadMode() {
+            readModeEnabled = !readModeEnabled;
+            const iframe = document.getElementById('pageFrame');
+            try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                if (readModeEnabled) {
+                    applyReadMode(iframeDoc);
+                } else {
+                    refreshPage();
+                }
+            } catch (error) {
+                console.log('Error al acceder al iframe:', error);
+            }
+        }
+
+        function applyReadMode(doc) {
+            // Eliminar elementos no deseados
+            const elementsToRemove = doc.querySelectorAll('header, footer, nav, aside, iframe, .ad, .ads, .advertisement');
+            elementsToRemove.forEach(el => el.remove());
+
+            // Aplicar estilos de lectura
+            const content = doc.body;
+            content.style.maxWidth = '800px';
+            content.style.margin = '0 auto';
+            content.style.padding = '20px';
+            content.style.fontSize = '18px';
+            content.style.lineHeight = '1.6';
+            content.style.backgroundColor = '#fff';
+            content.style.color = '#333';
+        }
+
+        function adjustZoom(delta) {
+            currentZoom += delta;
+            currentZoom = Math.max(0.5, Math.min(2, currentZoom));
+            applyZoom();
+            showZoomLevel();
+        }
+
+        function resetZoom() {
+            currentZoom = 1;
+            applyZoom();
+            showZoomLevel();
+        }
+
+        function applyZoom() {
+            const iframe = document.getElementById('pageFrame');
+            iframe.style.transform = `scale(${currentZoom})`;
+            iframe.style.transformOrigin = 'top left';
+        }
+
+        function showZoomLevel() {
+            const zoomLevel = document.getElementById('zoomLevel');
+            zoomLevel.textContent = `Zoom: ${Math.round(currentZoom * 100)}%`;
+            zoomLevel.style.display = 'block';
+            setTimeout(() => {
+                zoomLevel.style.display = 'none';
+            }, 2000);
+        }
+
+        async function captureScreenshot() {
+            try {
+                const iframe = document.getElementById('pageFrame');
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Crear una imagen temporal con el contenido del iframe
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = iframe.src;
+                
+                await new Promise((resolve) => {
+                    img.onload = () => {
+                        canvas.width = iframe.offsetWidth;
+                        canvas.height = iframe.offsetHeight;
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        // Crear enlace de descarga
+                        const link = document.createElement('a');
+                        link.download = 'captura.png';
+                        link.href = canvas.toDataURL();
+                        link.click();
+                        resolve();
+                    };
+                });
+            } catch (error) {
+                console.log('Error al capturar la pantalla:', error);
+                alert('No se pudo capturar la pantalla debido a restricciones de seguridad');
+            }
+        }
+
+        // Bloquear popups a nivel de ventana
+        window.addEventListener('beforeunload', function(e) {
+            e.preventDefault();
+            e.returnValue = '';
+        });
+
+        // Manejar teclas de navegación
+        document.addEventListener('keydown', function(e) {
+            if (e.altKey && e.key === 'ArrowLeft') {
+                goBack();
+            } else if (e.altKey && e.key === 'ArrowRight') {
+                goForward();
+            } else if (e.altKey && e.key === 'r') {
+                refreshPage();
+            }
+        });
+
+        // Iniciar con la URL por defecto
+        window.onload = loadUrl;
+    </script>
+</body>
+</html>
